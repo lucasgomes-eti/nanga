@@ -13,15 +13,37 @@ import { getEntry, setEntry, clearEntry } from '../music/state.js';
 export default {
   data: new SlashCommandBuilder()
     .setName('play')
-    .setDescription('Toca o audio de uma URL do YouTube no teu canal de voz.')
+    .setDescription('Toca uma URL do YouTube. Sem URL, retoma uma musica pausada.')
     .addStringOption((o) =>
       o
         .setName('url')
-        .setDescription('URL do video do YouTube')
-        .setRequired(true),
+        .setDescription('URL do video do YouTube (opcional — sem ela, retoma o que estava pausado)')
+        .setRequired(false),
     ),
 
   async execute(interaction) {
+    const url = interaction.options.getString('url');
+
+    // Caso 1: sem URL — tenta retomar uma musica pausada
+    if (!url) {
+      const entry = getEntry(interaction.guildId);
+      const status = entry?.player.state.status;
+      if (
+        entry &&
+        (status === AudioPlayerStatus.Paused || status === AudioPlayerStatus.AutoPaused)
+      ) {
+        entry.player.unpause();
+        await interaction.reply('Retomado.');
+        return;
+      }
+      await interaction.reply({
+        content: 'Nada pausado para retomar. Passa uma URL: `/play url:<link>`.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    // Caso 2: com URL — tocar nova musica. Precisa estar num canal de voz.
     const voiceChannel = interaction.member?.voice?.channel;
     if (!voiceChannel) {
       await interaction.reply({
@@ -45,7 +67,6 @@ export default {
       return;
     }
 
-    const url = interaction.options.getString('url', true);
     await interaction.deferReply();
 
     // 1) Metadata (titulo, duracao) - chamada leve
