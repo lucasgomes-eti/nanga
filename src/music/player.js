@@ -16,6 +16,7 @@ import {
   AudioPlayerStatus,
   VoiceConnectionStatus,
   entersState,
+  demuxProbe,
 } from '@discordjs/voice';
 import youtubeDl from 'youtube-dl-exec';
 import { getEntry, setEntry, clearEntry } from './state.js';
@@ -157,8 +158,15 @@ export async function ensureSession(guildId, voiceChannel) {
 
 /**
  * Inicia o stream da track na sessao atual, substituindo a track anterior.
+ *
+ * Estrategia: pedir pro yt-dlp preferir Opus em container webm. Aí o
+ * demuxProbe consegue desmontar o webm e mandar pacotes Opus direto pro
+ * Discord — pulando o FFmpeg, que e pesado em CPU constrained.
+ *
+ * Se o formato nao for reconhecivel (fallback m4a/AAC), o demuxProbe deixa
+ * a stream cair no pipeline padrao, que passa por FFmpeg.
  */
-export function playNow(guildId, track) {
+export async function playNow(guildId, track) {
   const entry = getEntry(guildId);
   if (!entry) return;
 
@@ -173,7 +181,8 @@ export function playNow(guildId, track) {
     track.url,
     {
       output: '-',
-      format: 'bestaudio',
+      // Prefere webm/opus (formats 251/250/249). Se nao houver, cai em qualquer audio.
+      format: 'bestaudio[acodec=opus]/bestaudio',
       quiet: true,
       noPlaylist: true,
     },
@@ -185,9 +194,25 @@ export function playNow(guildId, track) {
     console.error('yt-dlp subprocess error:', err.shortMessage || err.message || err);
   });
 
-  const resource = createAudioResource(subprocess.stdout);
   entry.subprocess = subprocess;
   entry.current = track;
+
+  let resource;
+  try {
+    const { stream, type } = await demuxProbe(subprocess.stdout);
+    resource = createAudioResource(stream, { inputType: type });
+  } catch (err) {
+    console.error('demuxProbe falhou:', err);
+    // Forca avanco para a proxima track via Idle handler
+    try {
+      subprocess.kill?.();
+    } catch {
+      /* ignore */
+    }
+    entry.player.stop(true);
+    return;
+  }
+
   entry.player.play(resource);
 }
 
