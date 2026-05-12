@@ -10,6 +10,9 @@ import {
 import { readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { initCookies } from './music/cookies.js';
+
+initCookies();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 

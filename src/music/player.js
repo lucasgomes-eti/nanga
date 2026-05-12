@@ -20,18 +20,22 @@ import {
 } from '@discordjs/voice';
 import youtubeDl from 'youtube-dl-exec';
 import { getEntry, setEntry, clearEntry } from './state.js';
+import { withCookies } from './cookies.js';
 
 /**
  * Extrai metadata "rasa" (titulo, url, duracao) de uma URL.
  * Pode retornar 1 track (video unico) ou varias (playlist).
  */
 export async function fetchTracks(url) {
-  const info = await youtubeDl(url, {
-    dumpSingleJson: true,
-    flatPlaylist: true,
-    noWarnings: true,
-    skipDownload: true,
-  });
+  const info = await youtubeDl(
+    url,
+    withCookies({
+      dumpSingleJson: true,
+      flatPlaylist: true,
+      noWarnings: true,
+      skipDownload: true,
+    }),
+  );
 
   const isPlaylist = info?._type === 'playlist' || Array.isArray(info?.entries);
 
@@ -179,13 +183,13 @@ export async function playNow(guildId, track) {
 
   const subprocess = youtubeDl.exec(
     track.url,
-    {
+    withCookies({
       output: '-',
       // Prefere webm/opus (formats 251/250/249). Se nao houver, cai em qualquer audio.
       format: 'bestaudio[acodec=opus]/bestaudio',
       quiet: true,
       noPlaylist: true,
-    },
+    }),
     { stdio: ['ignore', 'pipe', 'ignore'] },
   );
 
